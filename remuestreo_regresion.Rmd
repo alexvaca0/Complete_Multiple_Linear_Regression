@@ -1,0 +1,1254 @@
+---
+output: html_document
+author: Alejandro Vaca Serrano
+---
+
+
+#PRÁCTICA ESTADÍSTICA DESCRIPTIVA, REGRESIÓN LINEAL MÚLTIPLE Y REMUESTREO.
+
+
+##EJERCICIO 1. 
+
+###1.A.
+
+```{r}
+#install.packages("ISLR")
+library(ISLR)
+
+data(Credit)
+```
+
+```{r}
+summary(Credit)
+```
+
+En este primer resumen de los datos podemos ver que tenemos algunas variables continuas, como Income, Limit, Rating (Credit Rating) y Balance. Por otro lado, tenemos variables discretas como el ID (No útil, sólo sirve para identificar registros), Cards (Número de tarjetas de crédito), Age (al estar puesta en número de años, y no poder tomar cualquier valor, sino solo valores enteros, es discreta), Education (años de educación). Además, tenemos variables categóricas, como es el caso de las binarias Gender, Student y Married; por otro lado tenemos la categórica de tres niveles Ethnicity. 
+
+
+Para utilizar el qqPlot que nos dé además un intervalo de confianza para la desviación de las colas, y poder así entender un poco más de nuestra distribución en cada una de las variables del set de datos, utilizaremos la librería car.
+
+También usaremos la librería fitdistrplus, que nos ayudará a entender la distribución de nuestros datos. 
+
+```{r}
+#install.packages("car")
+#install.packages("fitdistrplus")
+
+if(!require(fitdistrplus)) {
+  
+  install.packages("fitdistrplus")
+}
+
+if(!require(car)) {
+  
+  install.packages("car")
+}
+
+library(car)
+library(fitdistrplus)
+```
+
+
+```{r}
+credit <- data.frame(Credit)
+
+credit$ID <- as.character(credit$ID)
+#la transformamos en caracter; aunque esta variable no va a ser de utilidad. 
+
+boxplot(credit$Income, col = "blue")
+hist(credit$Income, col = "grey")
+
+qqPlot(credit$Income)
+
+
+descdist(credit$Income, discrete = FALSE)
+#aquí, además, podemos ver los estadísticos descriptivos básicos de la variable, como la mediana, la media, y la estimación de la desviación estándar, la asimetría y la curtosis. 
+
+#ks.test(credit$Income, pnorm)
+if(!require(nortest)) {
+  
+  install.packages("nortest")
+}
+
+library(nortest)
+
+#hacemos un test Lilliefors
+
+lillie.test(credit$Income)
+
+#también hacemos un test de Anderson-Darling
+
+ad.test(credit$Income)
+```
+
+Como podemos ver en los dos diagramas de arriba, el Income de las observaciones tiene una cantidad importante de outliers; en el boxplot se observa claramente una asimetría de la distribución, que confirmamos al dibujar el histograma. Desde luego el Income no se distribuye como una Normal. 
+
+Como podemos ver en el qqPlot() de la librería car, ni siquiera se asemeja en lo más mínimo a una normal. Esto es comprensible pues el Income tiene un tope en 0, sin embargo no existe un máximo teórico para esta variable, ya que puede tomar prácticamente cualquier valor positivo (la pregunta ¿cuál es el máximo ingreso que una persona puede tener? no se puede contestar). Además, como bien explican Brynjolfsson & McAffee(2014) en **The Second Machine Age**, entre otros, la riqueza, y por lo tanto también el Income, no se distribuyen de forma normal; pues un porcentaje pequeño de la muestra acapara un porcentaje grande de la riqueza. 
+
+Vemos por el output de la función descdist() que la distribución, de las incluidas en este paquete, que mejor se ajusta a la variable Income es la beta; esto se debe a una curtosis (concentración de los datos al rededor de la media) más alta que en la normal, y una square skewness muy superior. Los causantes de estas magnitudes son los outliers que tenemos en la muestra. Cabe mencionar que hablamos de outliers en lo que sería una distribución normal, en una distribución de otro tipo como la que probablemente tenga Income a juzgar por los datos es posible que estos valores no se consideren outliers. 
+
+No incluimos en el código el test de Kolgomorov-Smirnov, ya que tiene el problema de que existen valores duplicados en la muestra para la variable Income, y esto da un error. Por ello vamos a utilizar otros contrastes algo más robustos de cara a testar la normalidad de esta variable. En el Lilliefors podemos comprobar que efectivamente la variable Income está lejos de comportarse como una normal, ya que $p-val < \alpha, \alpha = 0.05$. El Anderson-Darling test que hacemos a continuación también nos confirma esta última afirmación, por el mismo motivo. 
+
+```{r}
+boxplot(credit$Limit, col = "red")
+library(ggplot2)
+
+media <-  mean(credit$Limit, na.rm = T)
+std <-  sd(credit$Limit, na.rm = T)
+
+set.seed(1)
+
+binwidth = 0.3
+
+valores <- data.frame( valores = rnorm(n = nrow(credit), mean = media, sd = std))
+
+credit$valores_aleatorios <- valores$valores
+
+
+plt <-  ggplot(data = credit, aes(x = Limit)) +
+        geom_histogram(bins = as.integer(sqrt(nrow(credit))), colour = "black",fill = "green" , 
+                       aes(y = ..density.., fill = ..count..)) +
+                        scale_fill_gradient("Count", low = "#DCDCDC", high="#7C7C7C") +
+                        stat_function(fun = dnorm, 
+                                      color = "blue", 
+                                      args = list(mean = media, 
+                                                  sd = std)) +
+        geom_vline(xintercept = mean(na.omit(credit$Limit)), color = "red", show.legend = T) +
+        geom_vline(xintercept = median(na.omit(credit$Limit)), color = "blue", show.legend = T) 
+  
+plt
+                        
+
+qqPlot(credit$Limit) 
+
+descdist(credit$Limit, discrete = F)
+
+lillie.test(credit$Limit)
+
+ad.test(credit$Limit)
+```
+
+De nuevo observamos una asimetría a la derecha para la variable Limit, como podemos ver tanto en el boxplot como en el histograma. Los valores de las colas no se dispersan tanto de la normal como para la variable Income, pero siguen estando fuera del intervalo de confianza al 95%. En el último de estos 4 gráficos podemos ver que la distribución que más se ajusta a esta variable es una gamma, quedando también cerca de la curtosis y asimetría típica de una lognormal. 
+
+Estos resultados tienen bastante sentido, ya que esta variable representa el límite de crédito del cliente, que esperamos que se distribuya de forma parecida al Income; con una salvedad, y es que para determinados Incomes altos el Límite de crédito no aumentará tan rápido como para diferencias menores de Income de unos clientes a otros. 
+
+Viendo los resultados del Lilliefors test y el Anderson-Darling test, podemos confirmar que la variable Limit tampoco se distribuye como una normal. 
+
+```{r}
+boxplot(credit$Rating, col = "blue")
+
+hist(credit$Rating, col = "green")
+
+qqPlot(credit$Rating)
+
+descdist(credit$Rating, discrete = F)
+
+lillie.test(credit$Rating)
+
+ad.test(credit$Rating)
+```
+
+El rating también sigue una distribución asimétrica a la derecha. Esto queda claro cuando hacemos el boxplot, que nos indica que un importante número de observaciones serían outliers en una Normal, y más claro aún cuando vemos el histograma. Vemos que la distribución que mejor se ajusta a estos datos es de nuevo una distribución Gamma, siendo la curtosis y la asimetría de esta variable también similares a los que tendría una distribución lognormal; como la distribución Weibull está cerca de estas dos, podríamos decir que habría que considerar que la variable Rating se puede distribuir también como uan Weibull. 
+
+Tanto el Lilliefors como el Anderson-Darling test nos indican que esta variable tampoco sigue la distribución normal. 
+
+```{r}
+boxplot(credit$Cards, col = "blue")
+
+hist(credit$Cards, col = "green")
+
+
+descdist(credit$Cards, discrete = T)
+
+```
+
+Como el número de tarjetas de crédito siempre es positivo, tenemos un historama en forma de escalera, de izquierda a derecha; gráficamente, podríamos decir que se asemeja a una Power Law, aunque quizás el "codo" no está lo suficientemente marcado. No debemos olvidar que esta variable es discreta y con un rango bastante limitado como vimos en el summary(), es decir, es una variable que puede tomar pocos valores (no hay mucha gente con más de 1-2 tarjetas de crédito). No realizamos ningún test en esta variable porque, como vemos en los gráficos, toma tan sólo 8 valores y está claro que no se comporta de la forma "normal"; gráficamente esto queda patente. Más adelante decidiremos si es mejor tener esta variable como discreta numérica o como categórica.
+
+
+```{r}
+boxplot(credit$Age, col = "blue")
+
+hist(credit$Age, col = "green")
+
+
+qqPlot(credit$Age)
+
+descdist(credit$Age, discrete = T)
+```
+
+Sin embargo la variable Age sí parece comportarse más o menos como una normal, con más observaciones en el centro de la distribución que en las "colas"; al hacer el boxplot vemos que en esta variable no se observan outliers a priori, y que existe quizás una pequeña asimetría a la izquierda, ya que la mediana es algo mayor a la media (la diferencia es muy pequeña). 
+
+Sin embargo, tal y como observamos en el resultado de descdist(), a lo que más se asemeja esta variable es a una normal, con algo menos de curtosis (esto lo vemos en el histograma, los datos no están tan centrados al rededor de la media como en una normal), también queda claro al ver el qqPlot, ya que en las colas tenemos más observaciones de las esperadas; las colas de la distribución de la variable no coinciden con las de una distribución Normal.  
+
+
+```{r}
+boxplot(credit$Education, col = "blue")
+
+hist(credit$Education, col = "green")
+
+qqPlot(credit$Education)
+
+descdist(credit$Education, discrete = T)
+```
+Vemos que la variable Education, que representa el número de años de educación, toma valores entre 5 y 20. La distribución es asimétrica a la izquierda, como podemos ver en el boxplot y en el posterior histograma. Hay poca gente con más de 15 años de educación. Sin embargo, tal y como vemos en el último gráfico, podríamos decir que pese a ser una variable discreta, toma suficientes valores, y estos están distribuidos de tal forma que siguen un comportamiento "normal". 
+
+
+```{r}
+
+ggplot(data = credit, aes(x = factor(Gender))) +
+  geom_bar(fill = "orange")
+
+
+```
+
+Vemos que la proporción de hombres y mujeres es prácticamente la misma; con algunas más mujeres que hombres. La representación de ambas categorías o clases es suficiente en la muestra, lo cual es positivo si utilizamos esta variable para construir modelos. 
+
+```{r}
+
+ggplot(data = credit, aes(x = factor(Student))) +
+  geom_bar(fill = "coral")
+
+```
+
+Vemos que tenemos muy pocos estudiantes en la muestra; esto significa que la mayoría de los clientes del banco (al menos basándonos en esta muestra de 400 clientes que nos han dado) no son estudiantes. Es razonable, ya que pocos estudiantes piden un crédito a no ser que sea para un préstamo de estudios. Una reflexión que puede surgir a partir del gráfico posterior es que el banco tiene un perfil de cliente más de gente a partir de una edad (como vimos en el gráfico de Age), y trabajando o jubilados. Esto nos da una idea del tipo de clientes que tiene el banco. 
+
+```{r}
+
+ggplot(data = credit, aes(x = factor(Married))) +
+  geom_bar(fill = "lightblue")
+
+```
+
+
+Además, gran parte de los clientes del banco (más de la mitad), están casados. Normalmente se asocia el hecho de estar casado a una mayor fiabilidad a la hora de repagar los préstamos etc, a un mayor compromiso, por lo tanto tiene sentido que el banco tenga una mayoría de clientes casados. Además, a juzgar por los datos de la edad y los estudiantes, la mayoría de los clientes del banco trabajan y tienen una edad superior a 30 años, por lo tanto están la mayoría en edad de estar casados. 
+
+
+```{r}
+ggplot(data = credit, aes(x = factor(Ethnicity))) +
+  geom_bar(fill = "darkblue")
+
+```
+
+Viendo la distribución de las etnias a las que pertenecen los clientes, es muy probable que los datos provengan de EEUU, uno de los países con más mezcla étnica del mundo; especialmente con muchos asiáticos y afro-americanos. Esto explica que, pese a haber una mayoría de caucásicos, también tienen un importante número de clientes de estas dos etnias; aproximadamente 1/2 caucásicos y 1/4 cada una de las otras dos etnias. Esto es positivo, ya que en la muestra tenemos suficientes casos de cada uno de los 3 niveles de este factor. 
+
+```{r}
+
+boxplot(credit$Balance, col = "blue")
+
+
+media = mean(credit$Balance, na.rm = T)
+std = sd(credit$Balance, na.rm = T)
+
+set.seed(1)
+
+binwidth = 0.3
+
+#hist(credit$Balance, col = "green")
+
+valores = data.frame( valores = rnorm(n = nrow(credit), mean = media, sd = std))
+
+credit$valores_aleatorios <- valores$valores
+
+
+plt <-  ggplot(data = credit, aes(x = Balance)) +
+        geom_histogram(bins = as.integer(sqrt(nrow(credit))), colour = "black",fill = "green" , 
+                       aes(y = ..density.., fill = ..count..)) +
+                        scale_fill_gradient("Count", low = "#DCDCDC", high="#7C7C7C") +
+                        stat_function(fun = dnorm, 
+                                      color = "blue", 
+                                      args = list(mean = media, 
+                                                  sd = std)) +
+        geom_vline(xintercept = mean(na.omit(credit$Balance)), color = "red", show.legend = T) +
+        geom_vline(xintercept = median(na.omit(credit$Balance)), color = "blue", show.legend = T) 
+  
+plt
+
+qqPlot(credit$Balance)
+
+descdist(credit$Balance, discrete = F)
+
+lillie.test(credit$Balance)
+
+ad.test(credit$Balance)
+```
+
+Vemos que la variable Balance en ningún caso se distribuye parecido a una normal. Tiene un mínimo en 0, en el que encontramos una gran cantidad de observaciones. Lo que vemos en esta variable es que todos los clientes que han cogido tienen mínimo un crédito de 0, es decir, que no hay ningún cliente que no tenga al menos tanto dinero en la cuenta de media que el que utiliza para los pagos (cuando el Balance es positivo, significa que el cliente ha tenido de media ese crédito en exceso ($) para el período). 
+
+Vemos que las variables Limit y Balance se distribuyen de forma relativamente parecida, tenemos varias variables distribuidas como beta, lognormal o gamma (o Weibull); esto sería de gran ayuda para que la distribución multidimensional al realizar el modelo de regresión posterior fuera una gaussiana en p dimensiones (dependiendo de las p variables que incluyamos en el modelo); de esta forma se aseguraría con mayor certeza el cumplimiento de los supuestos del General Linear Model, y el mejor estimador estimador lineal de las $\beta$ sería el OLS. 
+
+Con el Lilliefors test y el Anderson-Darling test podemos comprobar, viendo el p-value, que la variable Balance no se comporta como una normal (de una forma más completa y correcta: dada la muestra de datos estudiada, y según los tests mencionados previamente, tenemos suficientes evidencias para rechazar la Hipótesis Nula de Normalidad en la variable Balance). 
+
+```{r}
+
+sum(is.na(credit))
+credit$valores_aleatorios <-  NULL #esta variable la eliminamos ya, sólo la necesitábamos para hacer un gráfico. 
+
+
+```
+
+
+Vemos que no tenemos ningún valor ausente; por lo tanto podemos proceder a continuar con el ejercicio sin necesidad de imputar valores. 
+
+```{r}
+library(GGally)
+
+ggcorr(cor(credit[ , unlist(lapply(credit, is.numeric))]), label = T)
+
+cor(credit$Balance, credit$Limit)
+
+cor(credit$Balance, credit$Rating)
+
+```
+
+
+En este gráfico de correlaciones vemos que la variable Balance sólo tiene una correlación significativa, en ambos casos positiva, con Limit (0.86) y Rating (0.86); también tiene correlación positiva, aunque algo más suave, con Income. Income, a su vez, está bastante relacionada con Limit y Rating. Debemos tener en cuenta las relaciones lineales observadas en esta matriz de correlación para la construcción del modelo, en consideraciones tales como la multicolinealidad.
+
+
+###1.B.
+
+Comenzamos con el modelo simple inicial: 
+
+```{r}
+
+credit$Married <- as.factor(credit$Married)
+
+#inicialmente vamos a incluir Cards como una variable categórica. 
+credit$Cards <- as.factor(credit$Cards)
+
+
+linear_reg1 <- lm(Balance ~ Limit + Cards + Married, data = credit)
+
+summary(linear_reg1)
+
+```
+
+
+###1.C.
+
+Modelo teórico:
+
+$$
+Balance_i = \hat{\beta_0} + \hat{\beta_1}*Limit_i + \hat{\beta_2}*Cards_2i + \hat{\beta_3}*Cards_3i +  \hat{\beta_4}*Cards_4i + \hat{\beta_5}*Cards_5i + \hat{\beta_6}*Cards_6i + \hat{\beta_7}*Cards_7i + \hat{\beta_8}*Cards_8i + \hat{\beta_9}*Cards_9i + \hat{\beta_10}*MarriedYes_i + \hat{\epsilon_i}
+$$
+
+Modelo numérico: 
+
+$$
+Balance_i = -294.5 + 0.1725*Limit_i + -19.18*Cards_2i + -1.026*Cards_3i + 51.89*Cards_4i + 116.5*Cards_5i + 90.19*Cards_6i + 8.151*Cards_7i + 263.6*Cards_8i + 143.4*Cards_9i + -31.66*MarriedYes_i + \hat{\epsilon_i}
+$$
+Interpretación de Coeficientes:
+
+En primer lugar, dados los p-value de las variables independientes utilizadas en el modelo, podemos decir que tan sólo las variables Intercept (La constante), Limit y Cards5 (para la cual tendremos que crear una nueva variable e incluir únicamente esta en el modelo, en lugar de todos los niveles de tarjetas de crédito) son significativas. El resto de variables introducidas nos salen no significativas. 
+
+Pese a que antes de poder analizar profundamente los coeficientes significativos del modelo hay que eliminar las variables no signficativas y quedarse sólo con las que tengan un p-valor inferior a 0.05 ($\alpha = 0.5$) (una vez hecho esto los coeficientes del modelo cambiarán), procedemos a interpretar los coeficientes actuales:
+
+--> Limit : Manteniendo todo el resto de variables constantes, un incremento en 1 unidad de limit está relacionado con un incremento de 0.1725 de Balance. Esto tiene sentido, ya que aquellos clientes que mantienen un balance mayor en la tarjeta de crédito tendrán un límite mayor de crédito, son más fiables. 
+
+--> Cards5: Manteniendo todo el resto de variables constantes, el hecho de que el individuo i tenga 5 tarjetas de crédito está asociado con un Balance 116.5 unidades mayor con respecto a si tuviera 1, 2, 3, 4, 6. 7 u 8 tarjetas de crédito. 
+
+El resto de coeficientes no tendría sentido interpretarlos debido a que no son estadísticamente significativos en la muestra de 400 observaciones con la que estamos trabajando. Para las variables Cards_NumberOfCards la interpretación seguiría la misma lógica que para la variable Cards5 incluida arriba. De igual forma, la variable MarriedYes se interpretaría como que, manteniendo todo el resto de variables constantes, estar casado estaría asociado con un Balance -31.66 unidades menor, de media, con respecto a no estarlo. Sin embargo, al no ser estadísticamente significativo (es 0), debemos decir que estar casado no tiene ningún efecto sobre el Balance de los clientes. 
+
+El $R^2$ de este primer modelo es de 0.7526, mientras que el ajustado es de 0.742; esta diferencia no es excesiva, pero sí lo suficientemente como para poder afirmar lo mismo que nos llevan a afirmar los p-values, y es que al modelo hay que eliminarle variables, lo cual seguramente reduzca el $R^2$, pero será un modelo más robusto y sólo compuesto de variables significativas.
+
+
+```{r}
+hist(scale(credit$Balance), col = "blue")
+
+minmaxscaler <-  function(x){
+  
+  (x-min(x))/(max(x)-min(x))
+  
+  }
+
+hist(minmaxscaler(credit$Balance), col = "lightblue")
+
+hist(scale(credit$Limit), col = "green")
+
+hist(minmaxscaler(credit$Limit), col = "lightgreen")
+
+```
+
+A juzgar por los gráficos, tendría más sentido, en caso de querer centrar nuestros datos y comprobar si esto tiene algún efecto positivo en la estimación del modelo, escalarlos con la función scale(), ya que gráficamente esta transformación hace que las variables Balance y Limit se parezcan algo más entre sí y a una Normal que la transformación con la función minmaxscaler()). 
+
+```{r}
+
+new_df <- credit[ , c("Balance", "Limit", "Married", "Cards")]
+
+cards5num <- ifelse(as.numeric(new_df$Cards) == 5, 1, 0) #lo vamos a necesitar luego para hacer plots y demás, porque cuando le pasemos a esto de abajo as.numeric(Cards5) te devuelve 1 y 2, por los niveles que toma, en lugar de 0 y 1. 
+  
+new_df$Cards5 <- as.factor(ifelse(as.numeric(new_df$Cards) == 5, 1, 0))
+
+new_df$Cards <- NULL
+
+
+linear_reg <- lm(Balance ~ Limit + Cards5 + Married, data = new_df)
+
+summary(linear_reg)
+
+```
+
+###1.D.
+
+Vemos que en este modelo de nuevo MarriedYes sale no significativo, por lo tanto lo eliminamos. 
+
+```{r}
+linear_reg <- lm(Balance ~ Limit + Cards5, data = new_df)
+
+summary(linear_reg)
+
+plot(x = 1:length(linear_reg$residuals), y = linear_reg$residuals, col = "red", main = "Residuals Plot", ylab="Residuals", xlab = "Observation")
+abline(h =  3*sd(linear_reg$residuals), col = "blue")
+abline(h = mean(linear_reg$residuals), col = "black")
+abline(h = -3*sd(linear_reg$residuals), col = "blue")
+
+
+```
+
+En este modelo podemos ver que el $R^2$ baja a 0.7467, pero el $R^2adj$ es de 0.7454; podemos explicar, en teoría, el 74.54% de la varianza de la variable Balance con las variables Limit y Cards5, junto con la constante -306.3. Además, esta pequeña diferencia entre el $R^2$ y el $R^2adj$ significa que tenemos poca penalización por la inclusión de variables no significativas, por lo tanto nos reafianza la decisión de dejar como únicas variables del modelo Limit y Cards5. 
+
+Parte del código inferior para los gráficos en 3 dimensiones está basado en: http://www.sthda.com/english/wiki/a-complete-guide-to-3d-visualization-device-system-in-r-r-software-and-data-visualization
+
+
+```{r}
+library(rgl)
+library(knitr)
+knit_hooks$set(webgl = hook_webgl)
+
+#the below function was defined by http://www.sthda.com/english/wiki/a-complete-guide-to-3d-visualization-device-system-in-r-r-software-and-data-visualization
+
+rgl_init <- function(new.device = FALSE, bg = "white", width = 640) { 
+  if( new.device | rgl.cur() == 0 ) {
+    rgl.open()
+    par3d(windowRect = 50 + c( 0, 0, width, width ) )
+    rgl.bg(color = bg )
+  }
+  rgl.clear(type = c("shapes", "bboxdeco"))
+  rgl.viewpoint(theta = 15, phi = 20, zoom = 0.7)
+}
+
+
+```
+
+```{r}
+rgl_init()
+rgl.spheres(x = scale(new_df$Balance), y = new_df$Cards5, z = scale(new_df$Limit), r = 0.1, color = "yellow")  # Scatter plot
+rgl.bbox(color = "#333377") # Add bounding box decoration
+
+```
+
+En este objeto se puede apreciar mucho mejor la relación tridimensional de las variables de estudio. 
+
+```{r}
+
+linear_reg <- lm(scale(Balance) ~ scale(Limit) + Cards5, data = new_df)
+
+
+
+summary(linear_reg)
+
+library(plot3D)
+
+
+scatter3D(z = scale(new_df$Limit), x = scale(new_df$Balance), y = as.numeric(new_df$Cards5), col = "blue")
+
+
+scatter3D(z = scale(new_df$Limit), x = scale(new_df$Balance), y = as.numeric(new_df$Cards5), title = "3D Scatter Plot", add = F)
+lines3D(x = linear_reg$coefficients[1]+linear_reg$coefficients[2]*scale(new_df$Limit) + linear_reg$coefficients[3]*as.numeric(new_df$Cards5), z = scale(new_df$Limit), y = as.numeric(new_df$Cards5), add = T)
+```
+
+Aprovechando que tenemos un modelo de pocas variables, he decidido graficarlo en 3 dimensiones; primero he hecho un scatter plot de las 3 variables, con los ejes de la siguiente forma:
+
+  - Eje x: Balance escalado --> scale(Balance)
+  
+  - Eje y: Cards5
+  
+  - Eje z: Limit escalado --> scale(Limit)
+
+Después he procedido a dibujar el mismo gráfico pero ajustando la recta de regresión que hemos sacado, de tal forma que podemos observar cómo quedan de dispersos nuestros datos al rededor de este plano (el que forma la recta que explica el eje x: Balance escalado, con los valores en cada uno de los ejes z:Limit escalado e y: Cards5). En caso de que tratemos Cards como una variable numérica, tendremos un plano, en caso contrario tenemos dos líneas de regresión.
+
+Lo que ocurre es que al ser la variable Cards5 categórica binaria, tenemos dos líneas de regresión, la más oscura que es la de aquellos clientes que no tienen 5 tarjetas de crédito, y al rededor de la cual se aglutinan la mayor parte de los datos, y por otro lado la verde oscuro, ambas conectadas por líneas que las unen pues pertenecen ambas a x; esta es la recta resultante para aquellos clientes que sí tienen 5 tarjetas de crédito. 
+
+Al escalar las variables Balance y Limit el intercept pasa a ser 0. En este último modelo podemos ver que el $R^2adj$ no se reduce. 
+
+
+###1.E. 
+
+```{r}
+plot(linear_reg)
+
+```
+
+En estos plots podemos ver que ninguna observación supera la distancia de Cook, por lo que, pese a existir puntos con un leverage por encima de 0.03, siguiendo el criterio de la distancia de Cook no deberíamos quitar ninguna observación, por no considerarse que sesga el modelo lo suficiente. 
+
+Sin embargo, otra regla para eliminar observaciones utilizando la distancia de Cook, en lugar de cortar en 0.5 o en 0.1, es cortar cuando $Cook's Distance > 4/n, n = number of observations$. Esto lo probaremos próximamente. Este método para eliminar observaciones utilizando la distancia de Cook viene muy bien explicado en [este link](https://stats.stackexchange.com/questions/164099/removing-outliers-based-on-cooks-distance-in-r-language). 
+
+
+```{r}
+library(car)
+
+vif(linear_reg)
+#♦vemos que no hay colinealidad. 
+
+leveragePlots(linear_reg)
+```
+
+No tenemos problemas de colinealidad tampoco. 
+
+Ahora probaremos quitando los high leverage points de la forma descrita arriba:
+
+```{r}
+HighLeveragePoints <- cooks.distance(linear_reg) > 4/nrow(new_df)
+
+new_df_noleverage <- new_df[-HighLeveragePoints, ]
+
+summary(lm(scale(Balance) ~ scale(Limit) + Cards5, data = new_df_noleverage))
+
+
+```
+
+Vemos que no mejora significativamente el ajuste de los datos tras eliminar los highleveragepoints. 
+
+```{r}
+par(mfrow=c(2,2)) # init 4 charts in 1 panel
+plot(linear_reg)
+
+```
+
+Viendo los residuos frente a $\hat{y}$ ($\hat{Balance}$), no observamos ninguna tendencia concreta. Esto es positivo ya que si observáramos un patrón común en toda esta nube de puntos, significaría que existe relación entre $\hat{\epsilon}$ e $\hat{y}$. Sin embargo, podemos ver que las "colas" de la distribución de los residuos se salen de lo que sería normal, como podemos ver en el Normal Q-Q plot (esquina superior derecha). 
+
+```{r}
+mean(linear_reg$residuals)
+
+cor(linear_reg$residuals, credit$Balance)
+
+cov(linear_reg$residuals, credit$Balance)
+
+fuera <- linear_reg$residuals[linear_reg$residuals > 2*sd(linear_reg$residuals) | linear_reg$residuals < -2*sd(linear_reg$residuals)]
+
+n_fuera <- length(fuera)
+
+print(n_fuera)
+
+plot(x = 1:length(linear_reg$residuals), y = linear_reg$residuals, col = "red")
+abline(h =  2*sd(linear_reg$residuals), col = "blue")
+abline(h = mean(linear_reg$residuals), col = "black")
+abline(h = -2*sd(linear_reg$residuals), col = "blue")
+
+```
+  
+Como podemos ver en los gráficos y en el número de valores de $\hat{\epsilon}$ que se salen del intervalo al 99%, el efecto del escalado no es real, ya que tan sólo centra los datos al rededor de una escala más pequeña, pero se siguen quedando fuera estos valores (posiblemente atípicos) que tendremos que tratar posteriormente. El siguiente paso será realizar un test de homocedasticidad. 
+
+De todas formas, estamos omitiendo variables muy importantes para explicar el Balance seguro; esto provoca que se incumpla uno de los supuestos del Modelo Lineal General, y es que $$E[\epsilon] \neq 0$$. Esto se debe a que las variables omitidas se incluyen en el error; esto sesga el estimador OLS. Estimamos $E[\hat{\epsilon}]$ y nos sale 0, por lo que la consideración teórica anterior podría no ser cierta. Sin embargo, como vemos en la correlación entre los residuos y la variable Balance, sí existe una cierta correlación entre estas dos variables; en teoría, $E[(Balance - E[Balance])(\epsilon - E[\epsilon])] = 0$; sin embargo tanto la covarianza estimada (116.463) como la correlación estimada (0.50) nos indican que esta suposición es incorrecta, reforzando la afirmación de que estamos omitiendo importantes variables explicativas para el Balance. 
+
+```{r}
+if(!require(lmtest)) {
+  
+  install.packages("lmtest")
+  
+}
+
+require(lmtest)
+
+bptest(linear_reg)
+
+```
+
+Como $p-val < 0.05$, rechazamos la hipótesis nula de que existe homocedasticidad en el error del modelo. 
+
+Ahora vamos a probar quitando los valores que quedan fuera de $\pm 3 \cdot \hat{\sigma_\epsilon}$, para ver qué tal funciona en ese caso el modelo. 
+
+```{r}
+
+take_outliers_out <- function(df, residuals = linear_reg$residuals) {
+  
+  #Elimina aquellas variables que estén más allá de 3 sd (no hay ninguna observación por encima de 4sd)
+  if(is.data.frame(df)) {
+    
+    new_df <- df[-which(residuals > 3*sd(residuals) | residuals < -3*sd(residuals)), ]
+  
+    return(new_df)
+    
+  } else {
+    
+    new_vec <- df[-which(residuals > 3*sd(residuals) | residuals < -3*sd(residuals))]
+    
+    return(new_vec)
+  }
+  
+  
+}
+
+new_df2 <- take_outliers_out(df = new_df)
+
+model_complete_clean <- lm(Balance ~ Limit + Cards5, data = new_df2)
+
+summary(model_complete_clean)
+
+shapiro.test(model_complete_clean$residuals)
+
+``` 
+
+
+Como podemos ver, el modelo $\hat{Balance_i} = - 310 + 0.1716*Limit_i + 114.3*Cards5_i$ tiene un $R^2 = 0.7652$  y $R^2adj = 0.764$; el ajuste  mejora significativamente cuando quitamos esas observaciones.
+
+Sin embargo, el Shapiro-Wilk test nos indica que los residuos no se comportan de forma normal, ya que $0.02144 = p-value < \alpha = 0.05$. Por lo tanto se incumple uno de los supuestos del Teorema de Gauss-Markov; $\epsilon \nsim N(0, \sigma^2_\epsilon)$. Esto implica que nuestro estimador OLS ya no será Best Linear Unbiased Estimator. 
+
+
+```{r}
+scatter3D(z = new_df$Limit, x = new_df$Balance, y = as.numeric(new_df$Cards5), col = "blue")
+
+scatter3D(z = new_df2$Limit, x = new_df2$Balance, y = as.numeric(new_df2$Cards5), title = "3D Scatter Plot", add = F)
+lines3D(x = model_complete_clean$coefficients[1]+model_complete_clean$coefficients[2]*new_df2$Limit + model_complete_clean$coefficients[3]*as.numeric(new_df2$Cards5), z = new_df2$Limit, y = as.numeric(new_df2$Cards5), add = T)
+
+
+```
+
+
+```{r}
+new_df2$Cards5 <- take_outliers_out(df = cards5num)
+
+par(mfrow=c(2,1))
+
+plot(x = new_df2$Limit[as.numeric(new_df2$Cards5) == 1], y = new_df2$Balance[as.numeric(new_df2$Cards5) == 1], col = "blue",
+     main = "Model for Cards5=1", xlab = "Limit", ylab = "Balance")
+abline(-310 + 114.3, 0.1716)
+
+plot(x = new_df2$Limit[as.numeric(new_df2$Cards5) == 0], y = new_df2$Balance[as.numeric(new_df2$Cards5) == 0], col = "red",
+     main = "Model for Cards5=0", xlab = "Limit", ylab = "Balance")
+abline(-310, 0.1716)
+``` 
+
+Una de las conclusiones que se puede sacar del gráfico superior es que tenemos demasiadas pocas observaciones de clientes con cinco tarjetas de crédito en comparación con la muestra. 
+
+Un 8% es una proporción demasiado pequeña de una clase de una variable categórica, y por lo tanto no tenemos suficientes observaciones para estimar un modelo realmente robusto. 
+
+Por este motivo, vamos a proceder a realizar todo el análisis superior con un modelo en el que la variable Cards sea numérica en lugar de categórica. Además, probaremos a incluir pequeñas modificaciones en el modelo con el objetivo de mejorarlo. Un ejemplo de esto es incluir Limit^2.
+
+
+```{r}
+
+credit$Cards <- as.numeric(credit$Cards)
+
+
+#credit$Balance <- scale(credit$Balance)
+
+#credit$Limit <- scale(credit$Limit)
+
+
+modelo <- lm(Balance ~  Limit + I(Limit^2) + Cards, data = credit )
+
+summary(modelo)
+
+```
+
+Como vemos, el modelo se ajusta algo mejor que cuando incluimos Cards5; es mejor incluir Cards como variable numérica. 
+
+```{r}
+plot(hatvalues(modelo), col = "blue")
+
+
+```
+
+En este gráfico vemos que hay unos 6-7 puntos con un hatvalue significativamente mayor al resto. Vamos a probar a eliminarlos con el fin de determinar si esto mejora la bondad de ajuste del modelo. 
+
+```{r}
+
+high_hatvals <- hatvalues(modelo)>0.05
+
+credit_no_high_hatvals <- credit[!high_hatvals, ]
+
+modelo_no_high_hatvals <- lm(Balance ~  Limit + I(Limit^2) + Cards, data = credit_no_high_hatvals)
+
+summary(modelo_no_high_hatvals)
+
+plot(hatvalues(modelo_no_high_hatvals))
+
+plot(modelo_no_high_hatvals)
+
+```
+
+La bondad de ajuste de hecho empeora cuando eliminamos esas observaciones, por lo que descartamos que quitar esas observaciones mejore el modelo; salen más hatvalues altos que en el anterior modelo, sugiriendo que los ajustes en el estimador tras el cambio en los datos sesgan al mismo, llevándole a predecir peor la variable Balance. 
+
+Vamos a quitarle los 3 valores que se salen de $\pm 3*\sigma_\epsilon$, los cuales pueden ser considerados outliers. 
+
+```{r}
+
+df_no_outliers <- take_outliers_out(credit, residuals = modelo$residuals)
+
+modelo2 <- lm(Balance ~ Limit + I(Limit^2) + Cards, data = df_no_outliers)
+
+summary(modelo2)
+
+plot(modelo2)
+
+```
+
+Vemos que después de eliminar estas 3 observaciones mencionadas arriba el $R^2$ aumenta, al igual que el ajustado. Podemos explicar el 76.59% de la varianza de Balance con este modelo: 
+
+$$
+\hat{Balance} = -483.9 +0.2156 \cdot Limit - 3.964\cdot 10^-6 \cdot Limit^2 + 29.46 \cdot Cards
+$$
+
+Vemos que un incremento de Limit en 1 unidad, manteniendo el resto de variables constantes, está asociado con un incremento de 0.2156 del Balance. El mismo tipo de razonamiento podría aplicarse a las otras dos variables; manteniéndose constantes el resto, el coeficiente estimado $\beta$ de cada una de ellas tiene una relación de el tipo descrito arriba con la variable Balance. 
+
+Para finalizar, podríamos continuar con el análisis de este modelo comprobando, como para el modelo anterior, algo más exhaustivamente los leverage points, la homocedasticidad o la normalidad de los residuos. 
+
+```{r}
+vif(modelo2)
+
+shapiro.test(modelo2$residuals)
+
+sum(cooks.distance(modelo2) > 4/nrow(df_no_outliers))
+
+bptest(modelo2)
+
+```
+
+Podemos tener algo de colinealidad entre Limit y Limit^2, como era de esperar. Además, rechazamos la hipótesis de normalidad de los residuos y también la de homocedasticidad. 
+
+
+##EJERCICIO 2
+
+###2.A.
+
+```{r}
+library(mlbench)
+
+data(BostonHousing)
+
+housing <- data.frame(BostonHousing)
+head(housing)
+
+summary(housing)
+```
+
+Explicación Variables:
+
+
+- crim:	 per capita crime rate by town
+
+- zn:	 proportion of residential land zoned for lots over 25,000 sq.ft
+
+- indus:	 proportion of non-retail business acres per town
+
+- chas:	 Charles River dummy variable (= 1 if tract bounds river; 0 otherwise)
+
+- nox:	 nitric oxides concentration (parts per 10 million)
+
+- rm:	 average number of rooms per dwelling
+
+- age:	 proportion of owner-occupied units built prior to 1940
+
+- dis:	 weighted distances to five Boston employment centres
+
+- rad:	 index of accessibility to radial highways
+
+- tax:	 full-value property-tax rate per USD 10,000
+
+- ptratio:	 pupil-teacher ratio by town
+
+- b:	1000(B - 0.63)^2 where B is the proportion of blacks by town
+
+- lstat:	 percentage of lower status of the population
+
+- medv:	 median value of owner-occupied homes in USD 1000's
+
+
+```{r eval=FALSE, include=FALSE}
+sapply(housing, unique)
+
+```
+
+No lo introducimos en el código para no manchar mucho el Markdown, pero haciendo sapply(housing, unique), podemos comprobar qué valores toman cada una de las variables, y usamos esto para decidir qué variables son continuas, cuáles son discretas pero toman un rango suficientemente grande de valores y cuáles son categóricas. 
+Vemos que la variable rad toma solo los valores 1,2,3,4,5,6,7,8,24. Siendo el rango de valores tan pequeño, nos vemos tentados de introducirla como variable categórica; probaremos de ambas formas, tanto de forma categórica como numérica. Chas es una variable categórica claramente, como viene especificado arriba. El resto de las variables son o bien continuas o discretas que toman suficientes valores como para dejarlas como numéricas. 
+Vamos a ver, en caso de ser variable categórica, cuántas observaciones habría en cada grupo de la variable rad. 
+
+```{r}
+require(ggplot2)
+
+ggplot(data = housing, aes(x = as.factor(rad))) +
+  geom_bar(fill = "red")
+
+```
+
+Vemos que la mayoría de las observaciones están en 4, 5 y 24. Sin embargo, inicialmente usaremos esta variable como numérica ya que en teoría es un índice de la accesibilidad a las "radial highways"; por lo tanto la diferencia numérica representa, a priori, una diferencia proporcional en la facilidad para acceder a estas carreteras, y por lo tanto podría tener una influencia en el precio mediano de las viviendas del distrito. 
+
+```{r}
+library(psych)
+
+multi.hist(housing[ , unlist(lapply(housing, is.numeric))])
+
+```
+
+```{r}
+library(fitdistrplus)
+
+housing$chas <- as.factor(housing$chas)
+
+for(i in 1:ncol(housing)) { 
+  
+  require(ggplot2)
+  
+  if(is.numeric(housing[ , i])) {
+    
+    hist(housing[ , i], main = names(housing)[i], col = "blue")
+    
+    boxplot(housing[ , i], col = "green", main = names(housing)[i])
+    
+    if(is.integer(housing[ , i])) {
+      
+      descdist(housing[ , i], discrete = T) #si todos los elementos del vector son enteros, es una variable discreta que toma suficientes valores. 
+      
+    } else {
+      
+      descdist(housing[ , i], discrete = F) #sino, es una variable continua
+      
+    }
+    
+  } else if(is.factor(housing[ , i])) {
+    
+    counts <- table(housing[ , i])
+    
+    barplot(counts, main = names(housing)[i])
+    
+    descdist(as.numeric(housing[ , i]), discrete = T)
+    
+
+  } else {
+    
+    next
+    
+  }
+  
+}
+
+
+```
+
+Para la variable crim, vemos que la mayoría de los valores se encuentran cerca del 0, con muuy pocas observaciones de distritos (towns) con un ratio de crimen per capita superior a 20. En el boxplot de esta misma variable nos queda claro que es una variable con una distribución asimétrica fuerte a la derecha, de hecho el square skewness es altísimo, como vemos en el tercer gráfico. La distribución que más se acerca a la de esta variable es una beta.
+
+La variable zn tiene un comportamiento bastante similar, con muchas observaciones en valores cerca del 0 o 0, y pocas observaciones por encima de 20 "residential land zoned for lots" por cada 25,000 metros cuadrados. La distribución es asimétrica a la derecha, con una fuerte asimetría como puede apreciarse en el boxplot de esta variable. Esta variable tiene una distribución de tipo beta, según el gráfico de Cullen y Frey. 
+
+La variable indus nos muestra que la mayoría de "towns" (distritos) de Boston tienen una proporción de "non-retail business acres" entre 0 y 15, siendo esta porción de la distribución algo muy parecido a una Normal; sin embargo los valores más presentes están cerca del 20, con más de 150 observaciones; esto hace que la muestra pudiera dividirse casi en 2 partes en esta variable: aquellas observaciones con un indus de menos de 15 y las que tienen indus de más de 15. Como vemos en el boxplot, esta variable está más centrada y no tiene una asimetría tan clara como en los otros casos; ninguna observación, según el boxplot, sería considerada outlier en una normal. Curiosamente, vemos que la distribución que más se asemeja a esta variable es la uniforme. 
+
+Para la variable chas, podemos ver que la mayoría de los distritos no tienen cercanía al río Charles, ya que la categoría más abundante en esta variable categórica es, sin duda, el 0 (no cercanía al río Charles). Quizás nos faltan observaciones de la clase 1 para poder utilizar esta variable como predictor robusto, ya que las clases incluidas deben de ser suficientemente representativas. 
+
+La variable nox se distribuye de forma algo más parecida a la Normal; con un mínimo en 0.3850 y un máximo en 0.8710. Tiene una pequeña asimetría a la derecha, como podemos ver por la diferencia entre media y mediana. Sin embargo, esta asimetría no es tan fuerte como para las variables zn y crime, como vemos en el boxplot, ya que no quedan, a priori, variables que serían "outliers" en una Normal. La distribución que más se asemeja es también una beta, aunque con algo menos de asimetría, como vemos por el square of skewness del gráfico de Cullen y Frey. La curtosis también es algo inferior. 
+
+La variable rm tiene las observaciones más centradas que el resto de variables, y gráficamente vemos que se parece un poco más a la Normal que la mayoría del resto de variables que tenemos en el set de datos. En el boxplot vemos, sin embargo, que quedan bastantes observaciones fuera de los whiskers, lo cual nos indica que en una curva normal equivalente tendríamos varias observaciones como "outliers"; esto se puede deber a la gran centralización de los datos al rededor de la media. De hecho, como se puede ver en el gráfico de Cullen y Frey, se podría comportar como una Normal con una curtosis de 5 en lugar de 3. 
+
+En la variable age, vemos que la mayoría de los distritos tienen una proporción de viviendas ocupadas construidas antes de 1940 muy alta, en muchos caso casi del 100%. La distribución, si no fuera por este último rango de valores cerca del 100%, podría asemejarse bastante a una uniforme, ya que para el resto de valores de la variable las alturas de los "bins" son casi iguales (tenemos distritos con todos los tipos de proporciones de viviendas ocupadas construidas antes de 1940). Debido a este último de los "bins" observamos una asimetría a la izquierda en el boxplot. Como comentaba previamente, si no fuera por esta asimetría tendríamos una uniforme (gráfico de Cullen y Frey); pero la distribución que más se parece es una beta. 
+
+Para la variable dis, podemos ver que tiene una asimetría a la derecha a simple vista a juzgar por el histograma; esto lo confirmamos con el boxplot, que nos muestra que algunas observaciones quedarían como outliers en lo que sería una Normal. De nuevo vemos que la distribución que más se asemeja a la de esta variable sería una beta. 
+
+La variable rad, que podríamos haber dejado como categórica, vemos que tiene valores del 1 al 8 y luego el 24. Podríamos decir que, si no fuera por la diferencia de tamaños (para rad = 4, 5, 24 la altura o número de muestras es superior al resto), podría parecerse a una uniforme. De todas formas, es muy difícil atribuirle una distribución concreta a esta variable por contener números discretos de forma consecutiva hasta el 8 y luego el 24, que es 3 veces el anterior valor. Cualquier estimación de tendencia central o de cualquier otro momento del proceso estocástico que determina la distribución de rad estará sesgado por este hecho. Según el gráfico de Cullen y Frey esta variable podría seguir una distribución beta.
+
+La variable tax tiene una distribuición muy parecida a rad, lo que nos hace pensar que muy probablemente estén relacionadas (puede ser que una de ellas determine a la otra). Las mismas consideraciones en cuanto a distribución posible etc que se hicieron para rad se podrían hacer para tax. 
+
+Para el ptratio observamos una asimetría a la izquierda, en el boxplot se ve que algunas observaciones quedarían como "outliers" en una Normal; la distribución más factible basándonos en el gráfico de Cullen y Frey sería una beta; tiene una curtosis algo inferior a la normal (3), con una asimetría mayor. 
+
+La variable b nos muestra que la mayoría de los distritos tienen un valor para la variable b cercano a 400. Casi todas las observaciones están en el rango más alto de la distribución, es decir tiene una clara asimetría a la izquierda. Para sacar el porcentaje exacto de negros por distrito habría que hacer: 
+$B = \frac{\sqrt{b}}{1000} + 0.63$
+Vemos en el boxplot que hay muchas observaciones que serían outliers en una Normal, esto se debe al gran número de distritos con un b alto. La distribución que más se asemeja a b es una beta con una curtosis y asimetría cuadrada altísimos. 
+
+La variable lstat tiene una pequeña asimetría a la derecha, algo más suave que en otras variables. Algunas observaciones quedarían como "outliers" en una Normal, y la distribución que más se asemeja a lstat es una beta. Vemos, tanto en el histograma como en el boxplot, que la mayoría de los distritos de Boston tienen un porcentaje de gente de clase "baja" ("lower status") bastante pequeño, de en torno al 10% (aunque algunos distritos superan el 30%). 
+
+Por último, la variable medv tiene también asimetría a la derecha; la mayoría de las casas tienen un valor mediano de entre 10,000 y 30,000$, aunque algunos distritos llegan a 50,000 de valor mediano de sus casas "ocupadas por propietarios". En el boxplot vemos que algunos valores quedarían como "outliers" en una Normal. Por último, parece que la distribución que mejor se asemeja a cómo se distribuye medv es la beta, aunque también queda cerca la gamma. 
+
+Observando los gráficos de kurtosis-skewness, podemos ver que casi todas nuestras variables se distribuyen como una beta. Esto es positivo ya que, en general, cuando realizamos combinaciones lineales de variables que se distribuyen de la misma forma, estas combinaciones resultantes se distribuirán como una normal. 
+
+Antes de continuar con la exploración de variables, vamos a realizar tests de normalidad para la variable que queremos predecir, medv; además, dibujaremos un histograma y volveremos a realizar estos tests para 3 transformaciones diferentes de esta variable. En el Modelo Lineal se asume que las variable explicativas son determinísticas, y como $Y = X\beta + \epsilon$, las constantes estimadas $\hat{\beta}$ multiplicadas por la matriz "determinística" X, será determinística. De modo que, teóricamente, siguiendo esa ecuación, $\epsilon$ e Y se distribuirán de igual forma. Como necesitamos que $\epsilon \sim N(0, \sigma_\epsilon)$, estamos interesados en que la variable a predecir medv se comporte de forma lo más parecido posible a una Normal. Además, todos los test que usamos en el modelo para contrastar si los coeficientes estimados son significativos y demás, se basan en la suposición de normalidad. Por eso
+
+```{r}
+
+shapiro.test(housing$medv)
+
+ad.test(housing$medv)
+
+lillie.test(housing$medv)
+
+medv_sqrt <- sqrt(housing$medv)
+
+hist(medv_sqrt, main = "historam for sqrt(medv)")
+
+ad.test(medv_sqrt)
+
+lillie.test(medv_sqrt)
+
+shapiro.test(medv_sqrt)
+
+medv_log <- log(housing$medv)
+
+hist(medv_log, main = "histogram for log(medv)")
+
+shapiro.test(medv_log)
+
+ad.test(medv_log)
+
+lillie.test(medv_log)
+
+medv_logsq <- log(housing$medv)^2
+
+hist(medv_logsq, main = "histogram for log squared medv")
+
+shapiro.test(medv_logsq)
+
+ad.test(medv_logsq)
+
+lillie.test(medv_logsq)
+
+```
+
+Como vemos, algunas transformaciones posibles que probablemente darían mejor resultado en la regresión que la variable en bruto medv, serían hacer su raíz cuadrada o sacar el logaritmo natural. 
+
+
+```{r}
+require(GGally)
+
+pairs(housing[ , unlist(lapply(housing, is.numeric))], col = "red")
+
+ggcorr(housing, label = T)
+
+for (i in 1:13) {
+  
+  plot(x = housing[ , i], y = housing[, "medv"], type = "p", col = "blue", main = paste0(names(housing)[i], " vs medv"), xlab = names(housing)[i], ylab = "medv")
+  
+}
+```
+
+
+Observando el gráfico de la matriz de correlaciones, vemos que vamos a tener problemas de multicolinearidad, ya que hay algunas variables que están muy correlacionadas; como nox e indus, tax y rad, nox y tax, indus y tax. Las correlaciones altas con la variable medv nos interesan, el problema es cuando $X_j \approx \alpha_1*X_1 + \alpha_2*X_2 + ...+ \alpha_k*X_k$; es decir, cuando alguna de las variables independientes del modelo es aproximadamente una combinación lineal de otras variables independientes. 
+
+En los gráficos siguientes se ve que algunas variables tienen una clara relación con medv, mientras que en otros casos no está tan claro. Dejaremos primero que hablen los datos y los algoritmos de selección de variables, y posteriormente analizaremos una a una las variables introducidas, y describiremos los cambios o modificaciones que podemos hacerles para ganar poder predictivo. 
+
+###2.B
+
+Para comenzar a seleccionar variables del modelo antes de realizar transformaciones y demás, vamos a probar a hacer un step desde el modelo simple $Y = \beta_0$ hasta el modelo en el que incluimos todas las variables excepto medv y todas las interacciones entre las mismas. Para hacer esto podemos basarnos en [este link](https://faculty.chicagobooth.edu/richard.hahn/teaching/formulanotation.pdf); al incluir las variables en la forma Y ~ X1 * X2 * X3 estamos expresando: $Y = \beta_0 + \beta_1\cdot X1 + \beta_2 \cdot X2 + \beta_3 \cdot X3 + \beta_4 \cdot X1 \cdot X2 + \beta_5 \cdot X1 \cdot X3 + \beta_6 \cdot X2 \cdot X3 + \beta_7 \cdot X1 \cdot X2 \cdot X3 + \epsilon$.  Como esto es computacionalmente muy costoso, y llevaría mucho tiempo encontrar la combinación óptima de variables en base al AIC, dejamos el fullmodel de este tipo comentado y utilizamos uno hecho a mano, con más restricciones, es decir sin comprobar todas las combinaciones posibles entre las variables. 
+
+
+
+```{r}
+library(leaps)
+library(MASS)
+
+nullmodel <- lm(medv ~ 1, data = housing)
+
+#fullmodel <- lm(medv ~ crim*zn*indus*chas*nox*rm*age*dis*rad*tax*ptratio*b*lstat, data = housing)
+
+fullmodel = lm(medv ~ crim + zn + indus + chas + nox + rm + age + dis + rad + tax + ptratio + b + lstat + crim:zn + crim:nox + crim:rm + crim*lstat + lstat:rad + lstat:b + lstat:rm + ptratio:nox + ptratio:lstat, data = housing)
+
+
+
+step.both <- stepAIC(nullmodel, scope = list(lower = nullmodel, upper = fullmodel), direction = "both")
+
+summary(step.both)
+
+```
+
+Ahora vamos a ver si encontramos un codo para restringir el número de variables con este último modelo que nos da el step.
+
+```{r}
+
+model <- regsubsets( medv ~ lstat + rm + ptratio + dis + crim + nox + 
+    rad + tax + zn + chas + lstat:rm + lstat:rad + lstat:ptratio, data = housing, nvmax = 12)
+
+plot(model)
+
+plot(summary(model)$rsq, type = "l")
+
+```
+
+No se termina de ver un codo claro, aunque hay pequeños cambios de pendiente del R^2 en 2, 3 y 8 variables, por lo que nos quedaremos de momento con lstat, rm, ptratio, dis, crim, nox, rad (tax la eliminamos porque está muy correlacionada con rad, contienen información redundante), zn, lstat:rm y lstat:rad. 
+
+```{r message=FALSE, warning=FALSE}
+require(car)
+
+crPlots(lm(medv ~ lstat + rm + ptratio + dis + crim + nox + 
+    rad + zn , data = housing))
+```
+
+
+Basándonos en los gráficos que vemos arriba, realizamos algunas transformaciones en determinadas variables (ver código) para "linearizar" las relaciones entre las mismas y así mejorar el modelo. 
+
+```{r}
+
+housing2 <- housing
+
+housing2$dissq <- housing2$dis^2
+
+housing2$medv_sqrt <- sqrt(housing2$medv)
+
+modelo_1 <- lm( medv_sqrt ~ log(lstat) + rm + I(rm^2) + log(ptratio) + log(dissq) + sqrt(crim) + nox + 
+    log(rad) + log(ptratio) + lstat:rad + lstat:I(rm^2), data = housing2)
+
+summary(modelo_1)
+
+plot(modelo_1)
+
+vif(modelo_1)
+
+```
+
+En primer lugar, viendo los p-value, tenemos que tomar una decisión de qué hacemos con $rm^2 \cdot lstat$, ya que si usamos un $\alpha = 0.05$, tendríamos que eliminarla. La cuestión es la siguiente: en caso de que la variable mencionada sea realmente relevante (significativa), si la eliminamos pasaremos esta variable al error, incumpliendo supuestos y por lo tanto sesgando el estimador (ya no tendríamos un estimador lineal insesgado según el teorema de Gauss-Markov); si resulta no ser relevante y la incluimos en el modelo, dejaremos de tener un BLUE (Best Linear Unbiased Estimator), pero seguiremos teniendo un estimador insesgado. Ante este tradeoff, tomo la decisión, debido a la cercanía del p-value con la frontera ($\alpha$) de rechazo, y a esta explicación teórica previa, de mantener la variable en el modelo. Es preferible perder precisión que sesgar el estimador. 
+
+Este modelo tiene un R^2 ajustao bastante alto, de 0.8251, pero la colinearidad, basados en el Variance Inflation Factor, está presente en muchas de las variables que hemos introducido. A partir de este modelo iremos tratando de afinar un poco más, eliminando algunas variables que puedan resultar redundantes para lidiar con el problema de la colinearidad. 
+
+En cuanto a posibles observaciones influyentes (outliers que sesgan el estimador), sólo encontramos una observación en la primera frontera de la distancia de Cook de 0.5; probamos a eliminarla y ver qué tal se ajusta el modelo en ese caso.
+
+```{r}
+modelo_1_no_highleverage <- lm( medv_sqrt ~ log(lstat) + rm + I(rm^2) + log(ptratio) + log(dissq) + sqrt(crim) + nox + 
+    log(rad) + log(ptratio) + lstat:rad + lstat:I(rm^2), data = housing2[-365, ])
+
+summary(modelo_1_no_highleverage)
+
+```
+
+Como podemos ver, la eliminación de esta observación ha resultado en un considerable aumento de R^2 ajustado, además de un aumento en el valor absoluto del t-value de la variable $lstat \cdot rm^2$, lo cual se traduce en que resulta significativa para $\alpha = 0.5$. 
+
+```{r}
+
+modelo_2_2 <- lm(log(medv) ~ log(crim) + log(nox) + age + rm + dis + rad + tax + ptratio + log(b) + log(lstat), data = housing)
+
+summary(modelo_2_2)
+
+```
+
+Este modelo empeora significativamente con respecto al anterior, en términos de R^2 ajustado.
+
+Este chunk de aquí abajo se irá utilizando para probar todos los modelos que se nos ocurran; sin embargo, para no alargar este Markdown más de la cuenta, se presentarán sólo los modelos definitivos, con variaciones para poder compararles en el Ejercicio 3. 
+
+```{r}
+library(car)
+
+modelo_2_3 <- lm(sqrt(medv) ~ sqrt(crim) + nox + rm + I(rm^2) + log(dis) + log(rad) + log(ptratio) + sqrt(b) + log(lstat), data = housing2) 
+
+summary(modelo_2_3)
+
+plot(modelo_2_3)
+
+plot(hatvalues(modelo_2_3))
+
+vif(modelo_2_3)
+
+crPlots(modelo_2_3)
+
+```
+
+En principio, vemos que con las variables incluidas podemos explicar, teóricamente, el 82.11% de la varianza de $\sqrt{medv}$. 
+
+Podríamos quitarle algunos puntos influyentes como la observación 365; sin embargo, dado que ningún outlier supera la distancia de Cook de 0.5, creo que es una buena decisión no eliminar estas variables, ya que estaríamos en típico caso de overfitting. Nos interesa que el modelo generalice bien a la hora de predecir, y si ajustamos perfectamente los coeficientes para conseguir un $R^2$ alto en la fase de train, estaremos lastrando la capacidad del modelo de no quedar demasiado lejos de observaciones algo más extremas que la mayoría; esto nos hace perder algo de precisión en la muestra de datos que le estamos enseñando (en este caso es la muestra entera; comprobaremos la fiabilidad del modelo viendo diferentes datos en el siguiente ejercicio), pero es preferible a hacer overfitting en cuanto a procurarle robustez al modelo. Sin embargo, debemos mencionar que las observaciones 365, 372 y 373 son claramente outliers en el dataset mostrado según el Q-Q Plot. Testamos la normalidad de los residuos:
+
+```{r}
+shapiro.test(modelo_2_3$residuals)
+
+shapiro.test(modelo_2_3$residuals[-c(365, 372, 373)])
+
+shapiro.test(modelo_2_3$residuals[-c(365, 369, 372, 373)])
+
+shapiro.test(modelo_2_3$residuals[-which(hatvalues(modelo_2_3) > 0.15)])
+
+hist(modelo_2_3$residuals, main = "residuals histogram", xlab = "residuals", col = "blue")
+```
+
+Como podemos comprobar, $p-val < \alpha, \alpha = 0.05$, de modo que rechazamos la hipótesis de que los residuos se comportan de forma normal. Esto puede suponer un problema para prácticamente cualquier estimador lineal, en caso de estar suficientemente lejos de la normal (lo cual por el bajísimo p-value es bastante probable). Todos los tests que realizamos los hacemos sobre la suposición de que $\epsilon \sim N(0, \sigma_\epsilon)$, en cuanto esto no se cumple no podemos estar seguros de tener un buen modelo predictivo. 
+
+Vemos que al eliminar tan sólo esas 3 observaciones que tenían unos errores anormalmente grandes (siempre en relación a la muestra de datos) el p-value sube hasta $3.647 \cdot 10^-5$. Y cuando quitamos además la observación 369, sube hasta $0.0002201$. En función de si estas observaciones fueran verdaderos outliers o simplemente son una clase de casas que no está bien representada en esta muestra o para la que faltan variables explicativas tomaríamos una decisión u otra respecto a su eliminación. Para comprobar esto necesitaríamos más datos. 
+
+Vemos con el Variance Inflation Factor (VIF) que podríamos tener colinealidad entre $rm$ y $rm^2$, esto era posible ya que, pese a no ser esta segunda una combinación lineal perfecta de la primera, es la misma variable elevada al cuadrado, y por lo tanto existe la posibilidad de que contenga prácticamente la misma información que la primera. 
+
+Mantendremos además del modelo modelo_2_3, uno nuevo en el que no incluiremos rm, tan sólo su transformación cuadrática $rm^2$:
+
+```{r}
+
+housing2$rmsq <- housing2$rm^2
+
+modelo_no_colineal <- lm(sqrt(medv) ~ sqrt(crim) + nox + rm + log(dissq) + log(rad) + log(ptratio) + sqrt(b) + log(lstat), data = housing2)
+
+
+summary(modelo_no_colineal)
+
+crPlots(modelo_no_colineal)
+
+
+```
+
+
+```{r}
+
+otro_modelo_alternativo <- lm(log(medv) ~ sqrt(crim) + nox + rmsq  + log(dis) + log(rad) + log(ptratio) + sqrt(b) + log(lstat), data = housing2)
+
+summary(otro_modelo_alternativo)
+
+```
+
+Con este último modelo alternativo configuramos los cuatro modelos que vamos a usar para el ejercicio 3:
+
+1. Modelo_2_3 ($R_adj^2$ = 0.8211)
+
+2. Modelo_no_colineal ($R_adj^2$ = 0.8032)
+
+3. Otro_modelo_alternativo ($R_adj^2$ = 0.7918)
+
+4. Modelo_1 ($R_adj^2$ = 0.8251)
+
+La homocedasticidad y normalidad de los residuos del mejor modelo serán estudiados también en el siguiente ejercicio. 
+De todas las modificaciones que le hemos hecho al primer modelo que sacamos con stepAIC, las que mejor han resultado en términos de $R^2_adj$ son las introducidas en el Modelo_1. Por lo tanto, de momento seleccionamos ese modelo como el definitivo. Utilizaremos los resultados del próximo ejercicio para salir de dudas. 
+
+## EJERCICIO 3. 
+
+Todos los comentarios realizados en el anterior ejercicio al respecto de los supuestos, de las decisiones de incluir o no variables, de tratar de no sesgar al estimador y hacerle ganar precisión etc, serán comprobados en este ejercicio. En definitiva, el cross validation nos sirve para realizar un proceso iterativo y robusto de train y test splits para comprobar la capacidad predictiva real de los modelos, entrenados y estimados sus parámetros con una porción de los datos y comprobando qué tal predice ese modelo unos nuevos datos que no ha visto. 
+
+Esto se hará el número de observaciones de la muestra para el Leave One Out Cross Validation y 10 veces para el 10-Fold Cross Validation. Después, para elegir el modelo definitivo, nos podríamos guiar por distintos criterios. En concreto el output de las funciones de caret nos brinda el RMSE, R^2 y MAE de la predicción. Si la variable dependiente en todos los modelos estuviera exactamente en las mismas unidades, sería una buena idea utilizar el RMSE; sin embargo, al ser en algunos casos $\sqrt{medv}$ y en otros $ln(medv)$, utilizaremos como medida para elegir el modelo definitivo el R^2, que nos da el acierto en la predicción en forma de porcentaje, de 0 a 1, de tal forma que podemos comparar el performance de los modelos. 
+
+```{r}
+require(caret)
+
+```
+
+LEAVE ONE OUT CROSS VALIDATION.
+
+```{r}
+set.seed(1)
+
+train_control <- trainControl(method="LOOCV") 
+
+model1 <- train(sqrt(medv) ~ sqrt(crim) + nox + rm + I(rm^2) + log(dis) + log(rad) + log(ptratio) + sqrt(b) + log(lstat), data= housing2, trControl=train_control, method="lm")
+
+rmse1 <- as.numeric(model1$results["RMSE"])
+
+rsq1 <- as.numeric(model1$results["Rsquared"])
+
+model1_best <- model1$finalModel
+
+summary(model1)
+
+print(model1)
+
+model2 <- train(sqrt(medv) ~ sqrt(crim) + nox + rm + log(dissq) + log(rad) + log(ptratio) + sqrt(b) + log(lstat), data = housing2, trControl = train_control, method = "lm")
+
+summary(model2)
+print(model2)
+
+rmse2 <- as.numeric(model2$results["RMSE"])
+
+rsq2 <- as.numeric(model2$results["Rsquared"])
+
+model2_best <- model2$finalModel
+
+model3 <- train(log(medv) ~ sqrt(crim) + nox + I(rm^2)  + log(dis) + log(rad) + log(ptratio) + sqrt(b) + log(lstat), data = housing2, trControl = train_control, method = "lm")
+
+summary(model3)
+print(model3)
+
+rmse3 <- as.numeric(model3$results["RMSE"])
+
+rsq3 <- as.numeric(model3$results["Rsquared"])
+
+model3_best <- model3$finalModel
+
+
+model4 <- train(medv_sqrt ~ log(lstat) + rm + I(rm^2) + log(ptratio) + log(dissq) + sqrt(crim) + nox + 
+    log(rad) + log(ptratio) + lstat:rad + lstat:I(rm^2), data = housing2, trControl = train_control, method = "lm")
+
+summary(model4)
+print(model4)
+
+rmse4 <- as.numeric(model4$results["RMSE"])
+
+rsq4 <- as.numeric(model4$results["Rsquared"])
+
+model4_best <- model4$finalModel
+
+rmse_loocv <- as.vector(c(rmse1, rmse2, rmse3, rmse4))
+
+rsqvec <- as.vector(c(rsq1, rsq2, rsq3, rsq4))
+
+#print(paste("el mejor rmse es ", min(rmse_loocv),"que pertenece al modelo", which(rmse_loocv == min(rmse_loocv))) )
+
+print(paste("el mejor r^2 es ", max(rsqvec), "que pertenece al modelo", which(rsqvec == max(rsqvec))))
+
+```
+
+Por el método de Leave One Out CV sería una buena idea elegir el modelo número 4, es decir, Modelo_1. Tiene, de media, un R^2 de 0.8151 en los test set (la media del R^2 en cada test set de los 506 sets). Testamos la homocedasticidad y normalidad de los residuos de este modelo. 
+
+```{r}
+require(lmtest)
+
+shapiro.test(model4_best$residuals)
+
+bptest(model4_best)
+
+```
+
+Sin embargo, por buenas que sean las predicciones, seguimos rechazando tanto la hipótesis de normalidad como la de homocedasticidad. Por eso debemos tener cuidado, y siempre tener en mente que por buenas que sean las medidas de error que estemos obteniendo es posible que los test que realizamos y la confianza en el modelo no estén justificadas por incumplimiento de los supuestos del modelo. 
+
+Comprobaremos si el 10-Fold Cross Validation, que en teoría debería ser más robusto, nos indica que elijamos ese modelo o por el contrario nos obliga a tomar una decisión difícil. 
+
+10-FOLD CROSS VALIDATION
+
+```{r}
+
+set.seed(1)
+
+train_control <- trainControl(method="cv", number=10)
+
+model1 <- train(sqrt(medv) ~ sqrt(crim) + nox + rm + I(rm^2) + log(dis) + log(rad) + log(ptratio) + sqrt(b) + log(lstat), data= housing2, trControl=train_control, method="lm")
+
+rmse1 <- as.numeric(model1$results["RMSE"])
+
+rsq1 <- as.numeric(model1$results["Rsquared"])
+
+model1_best <- model1$finalModel
+
+summary(model1)
+
+print(model2)
+
+model2 <- train(sqrt(medv) ~ sqrt(crim) + nox + rm + log(dissq) + log(rad) + log(ptratio) + sqrt(b) + log(lstat), data = housing2, trControl = train_control, method = "lm")
+
+summary(model2)
+print(model2)
+
+rmse2 <- as.numeric(model2$results["RMSE"])
+
+rsq2 <- as.numeric(model2$results["Rsquared"])
+
+model2_best <- model2$finalModel
+
+model3 <- train(log(medv) ~ sqrt(crim) + nox + I(rm^2)  + log(dis) + log(rad) + log(ptratio) + sqrt(b) + log(lstat), data = housing2, trControl = train_control, method = "lm")
+
+summary(model3)
+print(model3)
+
+rmse3 <- as.numeric(model3$results["RMSE"])
+
+rsq3 <- as.numeric(model3$results["Rsquared"])
+
+model3_best <- model3$finalModel
+
+
+model4 <- train(medv_sqrt ~ log(lstat) + rm + I(rm^2) + log(ptratio) + log(dissq) + sqrt(crim) + nox + 
+    log(rad) + log(ptratio) + lstat:rad + lstat:I(rm^2), data = housing2, trControl = train_control, method = "lm")
+
+summary(model4)
+print(model4)
+
+rmse4 <- as.numeric(model4$results["RMSE"])
+
+rsq4 <- as.numeric(model4$results["Rsquared"])
+
+model4_best <- model4$finalModel
+
+rmse_10fcv <- as.vector(c(rmse1, rmse2, rmse3, rmse4))
+
+rsqvec <- as.vector(c(rsq1, rsq2, rsq3, rsq4))
+
+print(paste("el mejor r^2 es ", max(rsqvec), "que pertenece al modelo", which(rsqvec == max(rsqvec))))
+
+```
+
+Este método nos indica que el modelo que mejor predice de media en las 10 muestras aleatorias diferentes presentadas tras estimar sus $\beta$, es el modelo número 4; de tal forma que este modelo es el que mejor predice basándonos en estos dos métodos de cross validation. 
+
+Por lo tanto, determinamos que el modelo que mejor predice es el modelo número 4, es decir Modelo_1:medv_sqrt ~ log(lstat) + rm + I(rm^2) + log(ptratio) + log(dissq) + sqrt(crim) + nox + log(rad) + log(ptratio) + lstat:rad + lstat:I(rm^2). La decisión provisional del ejercicio 2 de quedarnos con este modelo como el definitivo resulta ser validada por ambos métodos de validación cruzada, ya que además de ser el que mejor bondad de ajuste tenía viendo todos los datos, es el que mejor predice de media en múltiples particiones train-test. 
+
+Como la homocedasticidad y la normalidad ya fueron rechazadas para este mismo modelo en el LOOCV, concluiremos diciendo que decidimos quedarnos definitivamente con este modelo pues tras hacer cross validation ha sido el que mejor predice de media; sin embargo es un modelo aún con muchas carencias, ya que no se cumplen algunos de los supuestos del Teorema de Gauss-Markov y eso provoca que nuestro estimador pueda estar sesgado, además de no ser el más eficiente. El problema de la heterocedasticidad podría resolverse haciendo la transformación de las variables, ajustándolas por la varianza del error, de tal forma que el modelo resultante tenga unos errores homocedásticos, siguiendo [este ejemplo](https://rpubs.com/cyobero/187387). 
+
